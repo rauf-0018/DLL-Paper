@@ -1,0 +1,419 @@
+\documentclass{article}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{longtable}
+\usepackage{array}
+\setlength{\extrarowheight}{2pt}
+\begin{document}
+
+\title{Collecting indicators of compromise from malicious DLLs for a machine learning-based generic malware detection mechanism}
+\author{
+    Mohammed Rauf Ali Khan\\
+    \texttt{g202320050@kfupm.edu.sa}\\
+    Department of Computer Engineering, KFUPM
+    \and
+    Ahmad Almulhem\\
+    \texttt{ahmadsm@kfupm.edu.sa}\\
+    Department of Computer Engineering, KFUPM
+}
+\date{}
+\maketitle
+
+\begin{abstract}
+The enormous growth in cyber-attacks led to the development of various intelligent detection mechanisms. However, the malware authors evade detection and deliver their attacks successfully. Several malware families including BlackBasta ransomware and Socks5Systemz trojan were deployed in the form of a dynamic link library as it is difficult to run, analyze, and verify a DLL’s presence. In this paper, we propose a zero-day, generic malicious DLL detection mechanism based on static features like the file metadata and strings. This mechanism frees the analysts and researchers from the task of behavioral analysis, and it can be added as an additional layer of security in SIEMs and AVs.
+\end{abstract}
+
+\section{Introduction}
+In this section of the paper, we have discussed what a dynamic link library in a Windows computer is exactly meant for, the reasons malware authors choose them for malware attacks, and the amount of damage a malicious library can do.
+
+\subsection{Introduction to a DLL}
+A dynamic link library, often abbreviated as a DLL\cite{dll_intro}, is known to be a portable executable in a Windows system. It works as a supporting dependency for an executable file. The .exe files take functions provided by the DLLs by importing them.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\linewidth]{DLL_Functionality.png}
+    \caption{DLL Functionality}
+    \label{fig:dll_functionality}
+\end{figure}
+
+In an executable, there is an import directory that contains the name of the imported library and the functions that might be used to support its execution. Whereas, in a DLL there will be an export directory specifying a list of all the functions that this library can provide to any .exe file that imports it. The DLL files come with a .dll extension and were majorly designed to support operating system functionalities.
+
+\subsection{Reasons for DLL file type being used in malware}
+In recent times, various malware APTs have delivered DLL payloads. Some famous names include the Emotet banking trojan, the BlackBasta ransomware, the Socks5Systemz\cite{socks5systemz} trojan, and the Grandoreiro\cite{grandoreiro} trojan. One of the main reasons APT groups choose DLL as an attack payload is that it cannot directly be run by double-clicking. It either attaches itself to a legitimate process in the memory or runs as a service in the background. This helps them hinder analysis.
+
+The malware delivery groups also utilize legitimate file names for their payloads. They also use fake digital signatures and drop their malware in such folders to exploit DLL search orders.
+
+\subsection{Persistence and damaging capabilities of a DLL}
+Malware persistence\cite{malware_persistence} refers to the capability of malware to survive system shutdown, reboots, and indefinite termination of the portable executable. A dynamic link library persists in a Windows computer in one of the following ways.
+
+\begin{itemize}
+    \item \textbf{AppInit DLLs-} Whenever an executable runs, the DLL is loaded along with it into the memory. For example, all the .exe files having a user interface load user32.dll into the memory. Malicious DLL can be added to the registry as an application initialization library. The following registry key stores all the AppInit DLLs:
+    \begin{verbatim}
+    HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\
+    CurrentVersion\Windows /v AppInit_DLLs
+    \end{verbatim}
+
+    \item \textbf{Known DLLs-} There is a pre-defined set of DLLs that are loaded into the memory during the system startup. Malicious DLLs can be added to the following registry for running as soon as the system starts:
+    \begin{verbatim}
+    HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\
+    Control\Session Manager\KnownDLLs
+    \end{verbatim}
+
+    \item \textbf{DLL Search Order Hijacking-} Every executable searches its dependencies in the following hierarchy:
+    \begin{itemize}
+        \item The directory from which the application is loaded.
+        \item The current directory.
+        \item The system directory (typically \path{C:\Windows\System32} on modern versions of Windows).
+        \item The Windows directory (typically \path{C:\Windows}).
+        \item The directories listed in the system PATH environment variable are traversed.
+    \end{itemize}
+    Malware can drop the DLL payload having a legitimate name in a path that comes before the actual path of the legitimate DLL in the above hierarchy to get its payload executed.
+
+    \item \textbf{Service DLLs-} Malware can install itself as a service and specify a DLL to be loaded when the service starts. This allows the malware to execute its code every time the service is initiated.
+
+    \item \textbf{Process Injection/ Hollowing-} In this technique, the malware replaces or appends malicious DLL’s code to a legitimate running process memory space. Such malware usually uses Windows APIs like CreateRemoteThread, VirtualAllocEx, WriteProcessMemory, and ShellExecuteEx.
+\end{itemize}
+
+\section{Literature Survey}
+Monappa\cite{monappa1, monappa2} explained the reasons malware authors and attackers choose DLLs as their payloads:
+\begin{itemize}
+    \item DLL cannot be executed by double-clicking.
+    \item It cannot be easily analyzed.
+    \item DLLs can come with legitimate names.
+    \item They can be run with/as a part of any legitimate process.
+\end{itemize}
+
+The article related to malicious DLLs\cite{article_dlls} discusses the list of various malware families having DLL as their payload including Raspberry Robin, Emotet, Qakbot, IcedId, etc. It also discusses various APT groups and the persistence mechanisms utilized by them to achieve execution. The blog also discusses the DLLs gaining entry into memory space by two methods, i.e., during link time and during run time.
+
+Sivaraju and Dinesh\cite{sivaraju_dinesh} explained a case study on Emotet malware. In their work, they explained how a spear-phishing word attachment led to the download of a DLL banking trojan. The impacts of this infectious DLL include a leak of 1.5 million banking credentials and damage of 2.5 billion US dollars across the globe.
+
+The work on malware persistence mechanisms\cite{persistence_mechanisms} highlights the meaning and importance of persistence in aspects of malware. They explained various legitimate features of a Windows operating system that are exploited in modern times by attackers to ensure that their malware remains in the compromised machine and achieves post-execution intent for them.
+
+Amanda\cite{amanda} in her work on various DLL loading mechanisms, explained several concepts related to DLL persistence and payload execution like DLL side loading, search order hijacking, services, and process injection. The author also contrasted these terms with PlugX as an example.
+
+Another work related to traditional malware analysis by Riadi\cite{riadi} explained the static and dynamic analysis processes. The author also compared both approaches thereby highlighting the best practices and advantages that each of the approaches provides. It discusses the following as the advantages of static analysis:
+\begin{itemize}
+    \item It eliminates the need for execution thereby ensuring safety.
+    \item It provides faster analysis as there is no need to collect behavioral logs.
+    \item It eliminates the need for an extra virtual environment needed for analysis.
+    \item It helps for early/zero-day detection.
+\end{itemize}
+
+The paper entitled “Malware Detection using Artificial Intelligence”\cite{ai_malware_detection} explains the usefulness of artificial intelligence in the field of cyber security. The authors discuss how machine learning can be used to find similar behavior for modeling threats and detect newly coming threats based on that knowledge.
+
+Another work related to malware detection\cite{ml_malware_detection} using machine learning algorithms discusses the importance of indicators of compromise from both static and dynamic analysis. Their approach presents the detection and classification of adware, phishing, rootkits, and ransomware using a combination of both heuristic and behavioral parameters of a portable executable.
+
+The paper related to malware detection using file metadata features\cite{metadata_malware_detection} discusses a generic malware detection mechanism that uses machine learning for modeling threats using suspicious metadata. Although this paper discusses metadata-based detection, it only covers suspicious .exe files and not .dll files.
+
+Table 1 shows work related to malware detection and machine learning in malware detection. It also contrasts our approach to detecting malicious DLLs with the other approaches and highlights the merits of our approach.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Various ML-Based Malware Detection Approaches}
+    \begin{tabular}{|p{3cm}|p{3cm}|p{3.5cm}|p{4cm}|}
+        \hline
+        \textbf{Authors} & \textbf{Approach} & \textbf{Discussion} & \textbf{Pitfalls} \\
+        \hline
+        Shijo, Salim\cite{shijo_salim} & ML-based detection as per malware behavior & Uses API call patterns to classify malware & Needs execution, different APIs can be used for the same intent \\
+        \hline
+        S. Noman, Maatouk, A. Noman\cite{s_noman} & ML-based detection as per malware strings & Extracts API calls from strings and classifies it & Cannot work if the sample is packed/ has obfuscated strings \\
+        \hline
+        Mokoena, Zuva\cite{mokoena_zuva} & Simple static and dynamic analysis using tools & Concludes dynamic analysis to have an upper hand & Analyzed only two samples, difficult to write generic signatures using dynamic analysis \\
+        \hline
+        Ijaz, Durad, Ismail\cite{ijaz_durad_ismail} & ML-based detection using behavioral and static feature patterns & Collected around 2300 dynamic and 92 static features & Large hybrid data, limited dynamic features due to controlled network \\
+        \hline
+        Iuzvyk, Peck, Kolesnikov\cite{iuzvyk_peck_kolesnikov} & Malware detection by understanding attack vectors & Detect malware using infection chain & APT groups might change the attack vector, their TTPs, and propagation \\
+        \hline
+        Akhtar, Feng\cite{akhtar_feng} & ML-based detection using code & Detect malware by modeling repeating code and its anomalies & Malware code might be obfuscated, might have loops and anti-analysis mechanisms \\
+        \hline
+        Liu, Wang, Yu\cite{liu_wang_yu} & ML-based detection using opcode, import functions patterns & Detect malware using opcodes and import directory & May have unnecessary opcodes with NOP, can use ordinals instead of import functions \\
+        \hline
+        Xu, Ray, Subramanyan, and Malik\cite{xu_ray_subramanyan_malik} & ML-based detection using memory flow & Detect rootkits using memory access patterns & Needs execution, difficult to detect rootkits during runtime \\
+        \hline
+        Rushabh, Xiao, Nichole, Connie\cite{rushabh_xiao_nichole_connie} & ML-based detection on counts and a few metadata parameters & Uses the number of sections, imports, dates, symbols, etc. & Malware detection based on the number of DLLs used or sections contained is too vague \\
+        \hline
+        Our Approach & ML-based detection using static metadata and suspicious strings & Uses a11 important features from DLLs to detect malware & Eliminates the need for DLL execution.
+            Can be used as a generic detection mechanism.
+            Specific to DLLs, provides focused detection.
+            Works even if one of the features is not available. \\
+        \hline
+        \end{tabular}
+\end{table}
+
+\section{Traditional Methods of DLL Analysis}
+
+This section of the paper highlights commonly used static and dynamic analysis approaches used by analysts and researchers for analyzing DLL samples.
+
+\subsection{Static Analysis}
+
+This section discusses various static parameters that can be verified to collect indicators of compromise from a DLL.
+
+\begin{itemize}
+    \item \textbf{File name} -
+    The payloads can appear with legitimate or random file names.
+    \begin{figure}
+        \centering
+        \includegraphics[width=\textwidth]{Figure-2.png}
+        \caption{Suspicious File Names}
+    \end{figure}
+
+    \item \textbf{Timestamp} -
+    Suspicious timestamps include very outdated dates or futuristic dates that have not happened yet.
+    \begin{figure}[h]
+        \centering
+        \includegraphics[width=\textwidth]{Figure-3.png}
+        \caption{Suspicious Timestamp}
+    \end{figure}
+
+    \item \textbf{Subsystem} -
+    Dynamic link libraries are supposed to run as a support in the background. They must have a CLI subsystem, yet a GUI subsystem is observed in various malicious DLLs.
+    \begin{figure}[h]
+        \centering
+        \includegraphics[width=\textwidth]{Figure-4.png}
+        \caption{Suspicious Subsystem}
+    \end{figure}
+
+    \item \textbf{ImpHash} -
+    ImpHash is the hash value of a portable executable’s import directory. It is used for generic detection widely as malware samples from the same family may have a common ImpHash.
+
+    \item \textbf{Use of ordinals instead of function names in the import directory} -
+    Malicious files use ordinals instead of function names to evade ImpHash-based detection. It is another suspicious indicator.
+    \begin{figure}[h]
+        \centering
+        \includegraphics[width=\textwidth]{Figure-5.png}
+        \caption{Suspicious use of ordinals}
+    \end{figure}
+
+    \item \textbf{Sections} -
+    Malicious DLLs may be packed or have sections with suspicious names and permissions. There might also be blank sections.
+    \begin{figure}[h]
+        \centering
+        \includegraphics[width=\textwidth]{Figure-6.png}
+        \caption{Suspicious sections and their privileges}
+    \end{figure}
+
+    \item \textbf{Entropy} -
+    It defines the randomness of strings present in the file. Any file having an entropy value between 7 and 8. The values in this range hint towards packing or the presence of junk strings.
+
+    \item \textbf{Export Directory} -
+    The export directory is the heart of a DLL. It specifies all the functions that this DLL provides to EXEs that import it. Suspicious exports might include random function names and repeating export function names might be seen in several malware samples belonging to the same family.
+    \begin{figure}[h]
+        \centering
+        \includegraphics[width=\textwidth]{Figure-7.png}
+        \newline
+        \caption{Suspicious/ Repeating Exports}
+    \end{figure}
+
+    \item \textbf{Fake Digital Signatures} -
+    Malicious DLL authors can append illegitimate digital signatures to their payload to make them look legitimate.
+    \begin{figure}[h]
+        \centering
+        \includegraphics[width=\textwidth]{Figure-8.png}
+        \caption{Fake Digital Signatures}
+    \end{figure}
+
+    \item \textbf{Strings} -
+    File strings can also be checked using SysInternal’s strings.exe or BinText tool. One can search for IP addresses, URLs, ransom notes, etc. in the file’s strings.
+\end{itemize}
+
+\subsection{Dynamic Analysis}
+
+For loading a DLL into memory, analysts invoke one of the pre-defined executables that attach the DLL to their memory space and ensure its execution depending on the type of the DLL. For a non-component object model link library, they use rundll32.exe as “rundll32.exe filename.dll, <export-name>”. If the DLL type is a component object model, then there is a need for registering those COM objects to the Windows registry. In such cases, regsvr32.exe is used as “regsvr32.exe filename.dll, RegisterDllServer”.
+
+For network monitoring, the analysts majorly use a network sniffer or monitor like NetMon, Wireshark, Fiddler, or Apate DNS that runs in the background while the DLL is executed using any of the internal utilities. Also, there are several third-party tools available that can help analysts to hook a DLL forcefully to any running process and help them to perform analysis.
+
+\section{Proposed Mechanism}
+
+This section of the paper includes the ML paradigm we propose for malware detection.
+
+\subsection{The Machine Learning Detection Paradigm for DLLs}
+
+In this paper, we propose a mechanism that uses a machine learning paradigm along with the static analysis features to detect malicious dynamic link libraries based on existing knowledge about malicious libraries’ metadata and suspicious string weight.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\linewidth]{Figure-9.png}
+    \caption{Metadata Features for ML-based Detection Mechanism}
+\end{figure}
+
+Table \ref{tab:metadata_features} discusses all the features that can be used to create a machine-learning model for the detection of malicious DLLs.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Metadata/Static Features of a DLL for designing ML detection scheme}
+    \label{tab:metadata_features}
+    \begin{tabular}{|l|p{6cm}|}
+        \hline
+        \textbf{Metadata/ Static Feature} & \textbf{Indicators} \\
+        \hline
+        File Name & Random or legitimate file names \\
+        \hline
+        Timestamp & Very old or futuristic creation dates \\
+        \hline
+        Subsystem & Any other subsystem than CLI \\
+        \hline
+        ImpHash & Repeating ImpHash in similar malware families \\
+        \hline
+        Imports & Use of ordinals \\
+        \hline
+        Sections & Unexpected privileges or sections with weird names \\
+        \hline
+        Exports & Repeating exports in similar malware families or missing export directory \\
+        \hline
+        Entropy & Randomness in strings (defense evasion) \\
+        \hline
+        Signer & Fake digital signatures with unknown signers \\
+        \hline
+        Overlay & Additional attachments to the portable executable \\
+        \hline
+        Strings & May consist of ransom notes, IP addresses, and other hints toward code \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\subsection{Data Collection}
+
+The metadata as discussed in Section 4.1 of this paper can be collected and placed together to form a dataset that would support professionals to train and deploy machine learning models for detecting malicious libraries based on those features. Three possible ways can be utilized for the formation of the dataset:
+
+\begin{itemize}
+    \item \textbf{Manually} \\
+    A Malware Researcher or Analyst can perform static analysis in their environment and fetch all the needed parameters manually. This is a tedious task as it will require a lot of time and manpower.
+    
+    \item \textbf{Using Automation Scripts} \\
+    Several CLI-based tools can be used for malware analysis. Also, Python comes with many libraries that support data retrieval useful for malware analysis. All of them can combinedly be used for writing automation scripts to extract data and store it in a common database.
+    
+    \item \textbf{Using Sandbox APIs} \\
+    VirusTotal and Hybrid Analysis APIs directly provide the metadata information. Their APIs can directly fetch data from their data stores and save them in a dataset. Use of APIs may require a subscription and give limited usage.
+\end{itemize}
+
+\subsection{Sample Dataset Illustration}
+
+Figures 10 and 11 in this section illustrate an outline of how a dataset can be created out of all the discussed features in our methodology. This dataset can further be used to deploy models that will detect malicious link libraries for their products.
+
+The following illustration depicts the data for the Black Basta ransomware DLL. It uses 0 to show the absence of suspicious indicators and 1 to show the presence of suspicious indicators.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\linewidth]{Figure-10.png}
+    \caption{Sample Dataset for Black Basta Ransomware DLL}
+\end{figure}
+
+The data for the Black Basta ransomware was created on the indications of a DLL with GUI subsystem, presence of ordinals in the import directory, repeating export function, and ransom note in strings. The following illustration depicts data for the Socks5Systemz trojan, which had DLL with GUI subsystem, common ImpHash, missing exports, and \%c\%c\%c\%c\%c\%c\%c.com like run-time URLs in strings as common IoCs.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\linewidth]{Figure-11.png}
+    \caption{Sample Dataset for Socks5Systemz DLL}
+\end{figure}
+
+\subsection{Advantages of the Proposed Mechanism}
+
+This machine learning-based approach for detecting malicious URLs has the upper hand over several detection approaches. Table \ref{tab:advantages} illustrates a comparison of commonly used malware detection mechanisms with our approach and highlights the advantages it can provide over other detection mechanisms.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Advantages of malicious DLL detection using Machine Learning}
+    \label{tab:advantages}
+    \begin{tabular}{|l|p{3cm}|p{3cm}|}
+        \hline
+        \textbf{Signature Type} & \textbf{Detection Support} & \textbf{Shortfall/ Advantages} \\
+        \hline
+        Hash-Based & Single file & One signature for one DLL \\
+        \hline
+        String Based (YARA) & Multiple files & DLL strings might be obfuscated \\
+        \hline
+        SNORT Based (Traffic) & Multiple files & Traffic might be encrypted \\
+        \hline
+        Behavioral (Memory Logs) & Multiple files & Needs DLL to be executed \\
+        \hline
+        ML Based & Multiple files & No need for execution, uses static file features. Based on several parameters, can even work when one of the parameters is obfuscated/absent. \\
+        \hline
+    \end{tabular}
+\end{table}
+
+This DLL detection mechanism can help organizations and communities involved in anti-virus and security instrumentation and event management to detect threats early. It will provide a defense against zero-day threats and will also lessen the workload of the analysts and signature writers. It can also be added as an additional layer of security to the anti-virus and anti-malware systems.
+
+\section{Conclusion}
+
+An artificial intelligence, machine learning-based detection mechanism for detecting malicious dynamic link libraries was proposed in this paper. It utilized several static features of portable executable files that serve for collecting indicators of compromise including file name, subsystem, ImpHash, exports, digital signatures, etc. for creating a dataset and training machine learning models on that data for supporting malware detection. Its various advantages excluded the need to run a DLL, and also supported zero-day malware detection by similar pattern detection. Therefore, using machine learning techniques for detecting malicious DLLs based on metadata and suspicious strings represents a significant advancement in cybersecurity.
+
+\section{Future Work}
+
+In this paper, we have only presented a glimpse or an idea of data that can be used for successfully implementing this detection scheme. Various malware families are emerging as DLLs and their samples can be collected through many AV communities and forums for extracting data using the mechanisms discussed in the paper. This dataset can be updated regularly and proper models can be trained to achieve higher accuracies, low false positive rates, etc.
+
+
+\clearpage
+\begin{thebibliography}{9}
+\bibitem{dll_intro}
+https://learn.microsoft.com/en-us/troubleshoot/windows-client/setup-upgrade-and-drivers/dynamic-link-library 
+
+\bibitem{socks5systemz}
+https://www.bleepingcomputer.com/news/security/socks5systemz-proxy-service-infects-10-000-systems-worldwide/ 
+
+\bibitem{grandoreiro}
+https://www.proofpoint.com/us/blog/threat-insight/copacabana-barcelona-cross-continental-threat-brazilian-banking-malware 
+
+\bibitem{malware_persistence}
+M. U. Rana, M. Ali Shah and O. Ellahi, "Malware Persistence and Obfuscation: An Analysis on Concealed Strategies," 2021 26th International Conference on Automation and Computing (ICAC), Portsmouth, United Kingdom, 2021, pp. 1-6, doi: 10.23919/ICAC50006.2021.9594197.
+
+\bibitem{monappa1} 
+Monnappa, K. (2018) 2018. Learning Malware Analysis. 1st ed. Packt Publishing. https://www.perlego.com/book/771697/learning-malware-analysis-explore-the-concepts-tools-and-techniques-to-analyze-and-investigate-windows-malware-pdf.
+
+\bibitem{monappa2} 
+https://www.oreilly.com/library/view/learning-malware-analysis/9781788392501/2f96c119-d568-4dbd-9209-c28d5377320e.xhtml 
+
+\bibitem{article_dlls}
+https://www.logpoint.com/en/blog/deep-dive-on-malicious-dlls/
+
+\bibitem{sivaraju_dinesh}
+Kuraku, Sivaraju \& Kalla, Dinesh. (2020). Emotet Malware -A Banking Credentials Stealer. 10.9790/0661-2204023140.
+
+\bibitem{persistence_mechanisms}
+Zane Gittins, Michael Soltys, Malware Persistence Mechanisms, Procedia Computer Science, Volume 176, 2020, Pages 88-97, ISSN 1877-0509, https://doi.org/10.1016/j.procs.2020.08.010.
+
+\bibitem{amanda}
+Amanda Stewart, DLL SIDE-LOADING: A Thorn in the Side of the Anti-Virus Industry, FireEye, https://www.mandiant.com/sites/default/files/2021-09/rpt-dll-sideloading.pdf.
+
+\bibitem{riadi}
+Riadi I. Implementation of malware analysis using static and dynamic analysis methods. International Journal of Computer Applications. 2015;975:8887.
+
+\bibitem{ai_malware_detection}
+N. Mohapatra, B. Satapathy, B. Mohapatra and B. K. Mohanta, "Malware Detection using Artificial Intelligence," 2022 13th International Conference on Computing Communication and Networking Technologies (ICCCNT), Kharagpur, India, 2022, pp. 1-6, doi: 10.1109/ICCCNT54827.2022.9984218.
+
+\bibitem{ml_malware_detection}
+Djenna, A.; Bouridane, A.; Rubab, S.; Marou, I.M. Artificial Intelligence-Based Malware Detection, Analysis, and Mitigation. Symmetry 2023, 15, 677. https://doi.org/10.3390/sym15030677
+
+\bibitem{metadata_malware_detection}
+Ajit Kumar, K.S. Kuppusamy, G. Aghila, A learning model to detect maliciousness of portable executable using integrated feature set, Journal of King Saud University - Computer and Information Sciences, Volume 31, Issue 2, 2019, Pages 252-265, ISSN 1319-1578, https://doi.org/10.1016/j.jksuci.2017.01.003.
+
+\bibitem{shijo_salim}
+P.V. Shijo, A. Salim, Integrated Static and Dynamic Analysis for Malware Detection, Procedia Computer Science, Volume 46, 2015, Pages 804-811, ISSN 1877-0509, https://doi.org/10.1016/j.procs.2015.02.149. 
+
+\bibitem{s_noman}
+H. A. Noman, Q. Al-Maatouk and S. A. Noman, "A Static Analysis Tool for Malware Detection," 2021 International Conference on Data Analytics for Business and Industry (ICDABI), Sakheer, Bahrain, 2021, pp. 661-665, doi: 10.1109/ICDABI53623.2021.9655866. 
+
+\bibitem{mokoena_zuva}
+T. Mokoena and T. Zuva, "Malware Analysis and Detection in Enterprise Systems," 2017 IEEE International Symposium on Parallel and Distributed Processing with Applications and 2017 IEEE International Conference on Ubiquitous Computing and Communications (ISPA/IUCC), Guangzhou, China, 2017, pp. 1304-1310, doi: 10.1109/ISPA/IUCC.2017.00199. 
+
+\bibitem{ijaz_durad_ismail}
+M. Ijaz, M. H. Durad and M. Ismail, "Static and Dynamic Malware Analysis Using Machine Learning," 2019 16th International Bhurban Conference on Applied Sciences and Technology (IBCAST), Islamabad, Pakistan, 2019, pp. 687-691, doi: 10.1109/IBCAST.2019.8667136.
+
+\bibitem{iuzvyk_peck_kolesnikov}
+D. Iuzvyk, T. Peck, O. Kolesnikov, Detecting Dll Sideloading Techniques In Malware Attack Chains, Securonix. https://www.securonix.com/blog/detecting-dll-sideloading-techniques-in-malware-attack-chains/ 
+
+\bibitem{akhtar_feng}
+Akhtar, M.S.; Feng, T. Malware Analysis and Detection Using Machine Learning Algorithms. Symmetry 2022, 14, 2304. https://doi.org/10.3390/sym14112304 
+
+\bibitem{liu_wang_yu}
+Liu, L., Wang, Bs., Yu, B. et al. Automatic malware classification and new malware detection using machine learning. Frontiers Inf Technol Electronic Eng 18, 1336–1347 (2017). https://doi.org/10.1631/FITEE.1601325
+
+\bibitem{xu_ray_subramanyan_malik}
+Z. Xu, S. Ray, P. Subramanyan and S. Malik, "Malware detection using machine learning based analysis of virtual memory access patterns," Design, Automation \& Test in Europe Conference \& Exhibition (DATE), 2017, Lausanne, Switzerland, 2017, pp. 169-174, doi: 10.23919/DATE.2017.7926977. 
+
+\bibitem{rushabh_xiao_nichole_connie}
+Vyas, Rushabh \& Luo, Xiao \& McFarland, Nichole \& Justice, Connie. (2017). Investigation of malicious portable executable file detection on the network using supervised learning techniques. 941-946. 10.23919/INM.2017.7987416. 
+
+\end{thebibliography}
+
+\end{document}
